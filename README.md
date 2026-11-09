@@ -9,7 +9,7 @@ Aplicação web para consulta e gestão da base de prestadores, preparada para P
 - Pesquisa com paginação no servidor; os usuários de consulta não recebem observações internas nem alguns campos pessoais/restritos.
 - Manutenção administrativa dos registros, desativação lógica, importação XLSX com prévia e confirmação e exportação XLSX/CSV restrita ao administrador.
 - Histórico administrativo de logins, consultas, visualizações, alterações, importações e exportações.
-- Interface responsiva com paleta azul e laranja inspirada nos materiais enviados. A imagem de logo não chegou entre os arquivos disponíveis; o pacote usa um monograma tipográfico provisório “D”.
+- Interface responsiva com paleta azul e laranja e logo Duarte fornecida, usada na tela de login e na navegação. A regra global para o atributo HTML `hidden` garante que login e painel não permaneçam visíveis juntos após a autenticação.
 
 ## Execução local
 
