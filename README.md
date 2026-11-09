@@ -1,94 +1,72 @@
 # BI Rede Duarte
 
-Aplicação web para consulta, análise e administração da base de prestadores da Rede Duarte. A interface foi desenhada a partir das cores e dos padrões do sistema enviado: azul institucional, laranja, acentos azuis, navegação lateral e painéis responsivos.
+Aplicação web para consulta e gestão da base de prestadores, preparada para PostgreSQL e implantação em Railway ou ambiente equivalente. Cada linha importada recebe um identificador próprio; registros repetidos não são consolidados nem apagados automaticamente.
 
-## Incluído
+## O que está incluído
 
-- Login individual por CPF e senha; senhas com hash PBKDF2, sessões no banco e tentativas de acesso limitadas.
-- Perfis **Administrador Master**, **Consulta** e **Operador**. O cadastro público fica desativado.
-- Pesquisa combinada, paginação no servidor (até 100 linhas por resposta), ficha de prestador e indicadores com gráficos.
-- Importação XLSX em duas etapas (prévia e confirmação), com preservação de todas as linhas preenchidas, inclusive semelhantes.
-- Exportação de backup CSV e Excel somente para o Administrador Master.
-- Exclusão lógica, gestão básica de usuários, registro de ações administrativas e interface adaptável a celular.
-- Campos originais mantidos como dados da linha, acrescidos de ID interno próprio; nenhum CNPJ/CPF é usado como chave de deduplicação.
+- Login individual por CPF e senha, bloqueio temporário após tentativas falhas, alteração de senha do próprio usuário e redefinição administrativa; perfis `admin`, `consulta` e `operador`.
+- Dashboard com contagens e gráficos agregados, sem carregar a planilha inteira no navegador.
+- Pesquisa com paginação no servidor; os usuários de consulta não recebem observações internas nem alguns campos pessoais/restritos.
+- Manutenção administrativa dos registros, desativação lógica, importação XLSX com prévia e confirmação e exportação XLSX/CSV restrita ao administrador.
+- Histórico administrativo de logins, consultas, visualizações, alterações, importações e exportações.
+- Interface responsiva com paleta azul e laranja inspirada nos materiais enviados. A imagem de logo não chegou entre os arquivos disponíveis; o pacote usa um monograma tipográfico provisório “D”.
 
-## Requisitos e execução local
+## Execução local
 
-Requer Python 3.11 ou mais recente e PostgreSQL para uma implantação persistente. Para uma avaliação local sem PostgreSQL, o sistema usa um SQLite de desenvolvimento, criado em `data/`; não use esse modo como banco de produção.
-
-### Windows (PowerShell)
-
-1. Instale Python e PostgreSQL e crie um banco e usuário para a aplicação.
-2. Abra o PowerShell nesta pasta e prepare o ambiente:
-
-```powershell
-py -3 -m venv .venv
-.\.venv\Scripts\Activate.ps1
-python -m pip install -r requirements.txt
-Copy-Item .env.example .env
-```
-
-3. Edite `.env`: informe `DATABASE_URL`, `SESSION_SECRET`, `ADMIN_BOOTSTRAP_CPF`, `ADMIN_BOOTSTRAP_PASSWORD` e `COOKIE_SECURE=0` apenas no acesso local por HTTP.
-4. Inicie:
-
-```powershell
-python -m uvicorn app.main:app --host 127.0.0.1 --port 8080
-```
-
-5. Acesse `http://127.0.0.1:8080`. O primeiro Administrador Master é criado no primeiro início de um banco vazio, desde que CPF e senha estejam configurados.
-
-### Linux/macOS
+Requer Python 3.11+.
 
 ```bash
-python3 -m venv .venv
-. .venv/bin/activate
+python -m venv .venv
+# Windows: .venv\\Scripts\\activate
+# macOS/Linux: source .venv/bin/activate
 pip install -r requirements.txt
-cp .env.example .env
-# edite .env e configure PostgreSQL e credenciais privadas
-uvicorn app.main:app --host 0.0.0.0 --port 8080
 ```
 
-Para desenvolvimento local com SQLite, deixe `DATABASE_URL` vazio/ausente e configure `COOKIE_SECURE=0`. O modo SQLite é apenas para teste local.
+Para um teste local, o sistema usa SQLite persistente em `data/bi_rede_duarte.sqlite3` se `DATABASE_URL` não estiver definido. Crie variáveis de ambiente para o primeiro administrador antes de iniciar. O CPF de bootstrap precisa passar na validação, e a senha deve ter pelo menos 12 caracteres.
 
-## Importar a planilha fornecida
+```bash
+# Windows PowerShell (substitua os valores por segredos próprios)
+$env:ADMIN_BOOTSTRAP_CPF="CPF_VALIDO"
+$env:ADMIN_BOOTSTRAP_PASSWORD="SENHA_LONGA_PRIVADA"
+$env:ADMIN_BOOTSTRAP_NAME="Administrador Master"
+$env:SESSION_SECRET="CHAVE_ALEATORIA_LONGA"
+python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
+```
 
-1. Entre como Administrador Master.
-2. Abra **Administração → Importar planilha Excel** e selecione a planilha original `.xlsx`.
-3. Confira a aba detectada, a contagem de linhas e as informações de validação; marque a autorização explícita e confirme.
-4. A aplicação pula linhas totalmente vazias, registra todas as demais como linhas distintas e recusa uma segunda importação do mesmo arquivo.
+Acesse `http://127.0.0.1:8000`. A conta master é criada uma única vez, quando ainda não existe administrador e as três variáveis de bootstrap estão configuradas. Depois da criação, remova `ADMIN_BOOTSTRAP_PASSWORD` das configurações do serviço. Não use os exemplos em produção.
 
-A aplicação não deduplica ou consolida organizações, unidades, especialidades ou CNPJs. A conversão de células Excel para a base grava texto para valores e datas ISO, mantendo os nomes originais das colunas. A importação precisa ser testada primeiro em homologação, comparando a contagem com a origem e verificando uma exportação de backup.
+## Configuração de produção
 
-## Deploy (Railway ou equivalente)
+1. Crie PostgreSQL gerenciado e configure `DATABASE_URL` com usuário de privilégio mínimo.
+2. Configure `SESSION_SECRET` com valor aleatório, `COOKIE_SECURE=1`, `ENVIRONMENT=production` e `DATA_DIR` em volume persistente.
+3. Configure as variáveis de bootstrap do primeiro administrador; remova a senha de bootstrap depois do primeiro início.
+4. Implante o serviço web e confira `/api/health`. Ative HTTPS, backups do banco e uma rotina de teste de restauração.
+5. Faça a primeira importação em homologação e compare a prévia e o total importado antes da produção.
 
-- Use PostgreSQL persistente e configure `DATABASE_URL` fornecida pelo serviço.
-- Configure `SESSION_SECRET` aleatória e persistente, `COOKIE_SECURE=1`, credenciais iniciais privadas e um limite adequado para `MAX_IMPORT_MB`.
-- Monte volume persistente para `DATA_DIR` (arquivos temporários da prévia de importação). Banco de produção e arquivos do usuário não devem depender do disco efêmero do contêiner.
-- Aplique HTTPS, restrinja acesso administrativo, faça backup automático do PostgreSQL e teste a restauração.
-- Revise o domínio, as origens confiáveis, as políticas de acesso e a conformidade LGPD com a equipe responsável antes de publicar.
+O arquivo `railway.json` inclui comando de inicialização e endpoint de saúde. O volume persistente deve ser montado em `DATA_DIR`, pois as prévias de importação ficam em área privada temporária. Em produção, não use o SQLite local como banco principal e não exponha o diretório de dados.
 
-O arquivo `railway.json` traz o comando de inicialização e o health check. O pacote é o código-fonte e não publica a aplicação, não acessa a instância atual do Duarte Repay e não migra dados automaticamente.
+## Importação da base Excel
 
-## Segurança e limites conhecidos
+Acesse como Administrador Master → Administração → Importar planilha. Envie o XLSX, confira a prévia e confirme. O importador procura a aba `BANCO REDE`, preserva os nomes originais dos campos, converte datas para texto ISO, ignora somente linhas completamente vazias, mantém as linhas repetidas e cria um ID interno. Um arquivo idêntico já importado é bloqueado por impressão digital; arquivos diferentes não sobrescrevem os dados existentes.
 
-- Usuários de consulta não veem observações internas, CPF/CNPJ integral, certos contatos pessoais, nem recebem a exportação da base.
-- O Administrador Master pode exportar todos os registros ativos; ações relevantes entram na trilha de auditoria.
-- A consulta é limitada e paginada no servidor. Não foi incluída recuperação pública de senha: ela deve ser feita por processo administrativo seguro, sem revelar se um CPF existe.
-- A conta inicial exige CPF válido e senha definida por ambiente. Não há senha padrão no pacote.
-- A tela de consulta não substitui revisão de qualidade; dados da origem com formatos inconsistentes permanecem como enviados.
-- Antes de produção, solicite revisão independente de segurança, teste a importação/backup com cópia da base e configure retenção de logs e backups.
+A prévia atualmente informa a quantidade de linhas preenchidas e mostra amostras; não representa validação semântica de CNPJ, CEP, UF ou duplicidade. Dados inconsistentes permanecem como recebidos e devem ser revisados por uma pessoa autorizada. Faça backup antes da migração.
+
+## Segurança e limites
+
+- Senhas armazenadas com PBKDF2-HMAC-SHA256; sessão aleatória assinada, cookie `HttpOnly`, `SameSite=Strict`, expiração configurável e hash do token no banco.
+- Bloqueio temporário depois de 8 tentativas falhas no intervalo de 15 minutos, com chave derivada do CPF digitado e endereço de origem.
+- Rotas de edição, usuários, exportação e importação protegidas no backend por perfil; a interface não é a barreira de segurança.
+- As exportações Excel e CSV incluem os campos da base ativa e são exclusivas de administrador; o perfil de consulta não vê observações internas, documentos de identificação nem campos de contato pessoal/comercial definidos como restritos.
+- O operador pode editar registros, mas não administrar usuários, desativar registros ou exportar.
+- Como parte dos dados é sensível, restrinja rede, contas administrativas, backups e logs; defina base legal, retenção e governança LGPD antes da operação.
+
+Este pacote é o código-fonte e a configuração inicial: não cria uma conta de produção, não provisiona banco/volume, não publica o serviço e não migra automaticamente a planilha. Faça homologação e revisão de segurança antes de disponibilizar a usuários.
 
 ## Testes
 
 ```bash
 python tests/smoke_test.py
+node --check app/static/app.js
 ```
 
-## Estrutura
-
-- `app/main.py` — API, banco, autenticação, pesquisa, importação, exportação e auditoria.
-- `static/` — interface web responsiva e marca Duarte em SVG.
-- `requirements.txt` — dependências Python.
-- `.env.example` — variáveis de configuração.
-- `railway.json` — configuração inicial de deploy.
-- `tests/smoke_test.py` — verificação básica das funções principais.
+O teste leve verifica a estrutura e sintaxe, mas não substitui teste integrado com PostgreSQL, fluxos de senha, permissões, importação da planilha inteira, exportação, carga ou revisão de segurança. O bloqueio de tentativas é aplicado pelo serviço; em implantação com múltiplas réplicas, complemente com limite compartilhado no proxy ou no provedor de identidade.
