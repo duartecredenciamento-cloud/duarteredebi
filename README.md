@@ -47,7 +47,7 @@ O arquivo `railway.json` inclui comando de inicialização e endpoint de saúde.
 
 ## Importação da base Excel
 
-Acesse como Administrador Master → Administração → Importar planilha. Envie o XLSX, confira a prévia e confirme. O importador procura a aba `BANCO REDE`, preserva os nomes originais dos campos, converte datas para texto ISO, ignora somente linhas completamente vazias, mantém as linhas repetidas e cria um ID interno. Um arquivo idêntico já importado é bloqueado por impressão digital; arquivos diferentes não sobrescrevem os dados existentes.
+Acesse como Administrador Master → Administração → Importar planilha. O limite configurado atualmente é de **25 MB por arquivo XLSX**. Envie a planilha, confira a prévia e confirme. O importador procura a aba `BANCO REDE`, preserva os nomes originais dos campos, converte datas para texto ISO, ignora somente linhas completamente vazias, mantém as linhas repetidas e cria um ID interno. Um arquivo idêntico já importado é bloqueado por impressão digital; arquivos diferentes não sobrescrevem os dados existentes.
 
 A prévia atualmente informa a quantidade de linhas preenchidas e mostra amostras; não representa validação semântica de CNPJ, CEP, UF ou duplicidade. Dados inconsistentes permanecem como recebidos e devem ser revisados por uma pessoa autorizada. Faça backup antes da migração.
 
