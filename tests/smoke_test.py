@@ -13,7 +13,8 @@ for required in [
     assert (ROOT / required).is_file(), f"Arquivo ausente: {required}"
 html = (ROOT / "app/static/index.html").read_text(encoding="utf-8")
 assert "BI Rede Duarte" in html and "/static/app.js" in html
-assert 'id="kSpecialties"' in html and 'id="specialtiesBottom"' in html
+assert 'id="kSpecialties"' in html and 'id="kStates"' in html and 'id="stateProviders"' in html
+assert 'specialtiesBottom' not in html and 'COBERTURA DE UF' in html
 assert 'id="statuses"' not in html
 js = (ROOT / "app/static/app.js").read_text(encoding="utf-8")
 assert "/api/admin/imports/confirm" in js and "data-detail" in js

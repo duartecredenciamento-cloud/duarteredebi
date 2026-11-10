@@ -81,16 +81,30 @@ def test_specialty_type_reads_official_column_and_excludes_missing_values():
     assert types["source_column"] == "TIPO ESPECIALIDADE"
 
 
-def test_state_series_uses_same_unique_provider_identity():
+def test_state_series_uses_unique_provider_identity_and_keeps_unknown_separate():
     result = aggregate_providers([
         row(1, "12345678901", "A", "Cardiologia", "SP"),
         row(2, "12345678901", "A", "Cardiologia", "SP"),
         row(3, "", "B", "Ortopedia", "BA"),
         row(4, "", "C", "", "Campinas"),
     ])
-    by_state = {item["uf"]: item["count"] for item in result["by_state"]}
-    assert by_state == {"BA": 1, "SP": 1}
-    assert sum(by_state.values()) + result["providers_without_valid_uf"] == result["total_providers"]
+    by_state = {item["uf"]: item for item in result["by_state"]}
+    assert {uf: item["count"] for uf, item in by_state.items()} == {"BA": 1, "SP": 1}
+    assert by_state["SP"]["label"] == "São Paulo"
+    assert result["providers_without_valid_uf"] == 1
+    assert result["uf_coverage"] == 2 and result["uf_coverage_total"] == 27
+
+
+def test_provider_registered_in_multiple_ufs_counts_once_in_each_state():
+    result = aggregate_providers([
+        row(1, "12345678901", "A", "Cardiologia", "SP"),
+        row(2, "12345678901", "A", "Cardiologia", "RJ"),
+        row(3, "", "B", "Ortopedia", "Campinas"),
+    ])
+    assert result["total_providers"] == 2
+    assert [(x["uf"], x["count"]) for x in result["by_state"]] == [("RJ", 1), ("SP", 1)]
+    assert result["providers_without_valid_uf"] == 1
+    assert result["uf_coverage"] == 2
 
 
 def test_dashboard_totals_region_and_specialty_groups_reconcile():
@@ -110,6 +124,8 @@ def test_filters_are_applied_before_shared_deduplication():
     assert filtered["total_providers"] == 1
     assert [x["label"] for x in filtered["top_specialties"]] == ["Cardiologia"]
     assert filtered["region_sum_matches_total"] is True
+    assert filtered["uf_coverage"] == 1
+    assert [(x["uf"], x["count"]) for x in filtered["by_state"]] == [("SP", 1)]
 
 
 def test_frontend_has_responsive_breakpoints_and_login_hidden_rule():
@@ -122,5 +138,8 @@ def test_frontend_has_responsive_breakpoints_and_login_hidden_rule():
     assert 'id="login"' in html and 'id="app" hidden' in html
     assert 'EXECUTIVE INTELLIGENCE' in html and '/static/logo.png' in html
     assert 'id="brazilMap"' in html and 'id="refreshDashboard"' in html
-    assert 'id="kSpecialties"' in html and 'id="specialtiesBottom"' in html
-    assert 'id="statuses"' not in html and 'STATUS ATIVO' not in html
+    assert 'id="kSpecialties"' in html and 'id="kStates"' in html
+    assert 'id="stateProviders"' in html and 'specialtiesBottom' not in html
+    assert 'COBERTURA DE UF' in html and 'STATUS ATIVO' not in html
+    assert '.topbar-right{flex:0 1 auto;min-width:0;justify-content:flex-end;}' in css
+    assert 'state-distribution-panel' in css

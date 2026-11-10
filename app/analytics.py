@@ -14,6 +14,16 @@ STATE_REGIONS = {
     "SUDESTE": {"ES": "ESPIRITO SANTO", "MG": "MINAS GERAIS", "RJ": "RIO DE JANEIRO", "SP": "SAO PAULO"},
     "SUL": {"PR": "PARANA", "RS": "RIO GRANDE DO SUL", "SC": "SANTA CATARINA"},
 }
+STATE_DISPLAY_NAMES = {
+    "AC": "Acre", "AL": "Alagoas", "AP": "Amapá", "AM": "Amazonas", "BA": "Bahia",
+    "CE": "Ceará", "DF": "Distrito Federal", "ES": "Espírito Santo", "GO": "Goiás",
+    "MA": "Maranhão", "MT": "Mato Grosso", "MS": "Mato Grosso do Sul", "MG": "Minas Gerais",
+    "PA": "Pará", "PB": "Paraíba", "PR": "Paraná", "PE": "Pernambuco", "PI": "Piauí",
+    "RJ": "Rio de Janeiro", "RN": "Rio Grande do Norte", "RS": "Rio Grande do Sul",
+    "RO": "Rondônia", "RR": "Roraima", "SC": "Santa Catarina", "SP": "São Paulo",
+    "SE": "Sergipe", "TO": "Tocantins",
+}
+
 _STATE_LOOKUP: dict[str, tuple[str, str]] = {}
 for _region, _states in STATE_REGIONS.items():
     for _uf, _name in _states.items():
@@ -95,7 +105,16 @@ def matches_filter(row: Any, filters: dict[str, str]) -> bool:
     }
     for key, criterion in filters.items():
         needle = normalized_text(criterion)
-        if needle and needle not in normalized_text(fields.get(key, "")):
+        if not needle:
+            continue
+        if key == "uf":
+            row_uf = normalize_uf(_get(row, "uf", "UF"))[0]
+            criterion_uf = normalize_uf(criterion)[0]
+            if criterion_uf != MISSING:
+                if row_uf != criterion_uf:
+                    return False
+                continue
+        if needle not in normalized_text(fields.get(key, "")):
             return False
     return True
 
@@ -124,19 +143,18 @@ def _specialty_groups(groups: dict[tuple[str, str], list[Any]]) -> list[dict[str
 
 
 def _state_groups(groups: dict[tuple[str, str], list[Any]]) -> list[dict[str, Any]]:
-    """Contagem geográfica com a mesma identidade única das demais métricas."""
-    counts: dict[str, int] = defaultdict(int)
-    names = {uf: name for states in STATE_REGIONS.values() for uf, name in states.items()}
-    for members in groups.values():
+    """Conta cada prestador uma vez em cada UF válida em que está cadastrado."""
+    identities_by_uf: dict[str, set[tuple[str, str]]] = defaultdict(set)
+    for identity, members in groups.items():
         for row in members:
             uf, _ = normalize_uf(_get(row, "uf", "UF"))
             if uf != MISSING:
-                counts[uf] += 1
-                break
+                identities_by_uf[uf].add(identity)
     total = len(groups)
-    return [{"uf": uf, "label": names[uf], "count": counts[uf],
-             "share": round(counts[uf] * 100 / total, 2) if total else 0}
-            for uf in sorted(counts)]
+    result = [{"uf": uf, "label": STATE_DISPLAY_NAMES[uf], "count": len(identities),
+               "share": round(len(identities) * 100 / total, 2) if total else 0}
+              for uf, identities in identities_by_uf.items()]
+    return sorted(result, key=lambda item: (-item["count"], item["label"].casefold()))
 
 
 def _specialty_type_groups(rows: list[Any]) -> dict[str, Any]:
@@ -215,6 +233,8 @@ def aggregate_providers(rows: Iterable[Any], filters: dict[str, str] | None = No
 
     raw_count = len(filtered)
     raw_missing_uf = sum(1 for row in filtered if normalize_uf(_get(row, "uf", "UF"))[0] == MISSING)
+    identified_ufs = {normalize_uf(_get(row, "uf", "UF"))[0] for row in filtered}
+    identified_ufs.discard(MISSING)
     return {
         "total_records": total,
         "total_providers": total,
@@ -228,6 +248,8 @@ def aggregate_providers(rows: Iterable[Any], filters: dict[str, str] | None = No
         "specialty_count": len(specialties),
         "by_region": by_region,
         "by_state": by_state,
+        "uf_coverage": len(identified_ufs),
+        "uf_coverage_total": 27,
         "by_specialty": top,
         "top_specialties": top,
         "smallest_specialties": bottom,
