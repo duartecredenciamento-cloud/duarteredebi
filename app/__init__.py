@@ -1,1 +1,1 @@
-"""Pacote da aplicação BI Rede Duarte."""
+"""BI Rede Duarte application package."""

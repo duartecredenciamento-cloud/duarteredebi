@@ -1,21 +1,14 @@
-# Atualização do BI Rede Duarte — tipos de especialidade
+# BI Rede Duarte — tela de acesso
 
-Este pacote contém os arquivos alterados para habilitar o indicador com a classificação já existente na coluna oficial `TIPO ESPECIALIDADE`. Não cria um mapa novo nem altera os registros de origem.
+Pacote visual para substituir a tela de login do BI Rede Duarte. Mantém o endpoint existente `/api/login`, os campos `cpf` e `password`, a sessão por cookie e a aplicação principal após autenticação.
 
-## Arquivos incluídos
+## Conteúdo
+- `index.html` — tela de login e estrutura atual do BI.
+- `static/app.css` — estilos da aplicação e novo visual da tela de acesso.
+- `static/app.js` — lógica original com animação leve de partículas, alternância da visibilidade da senha e estado de envio.
+- `static/logo.png` — logo enviado.
 
-- `app/analytics.py` — calcula categorias distintas e frequência por valor oficial.
-- `app/main.py` — ajusta a mensagem da auditoria administrativa.
-- `app/static/index.html`, `app/static/app.js`, `app/static/app.css` — apresenta o indicador e a distribuição.
-- `tests/test_analytics.py` — cobre valores oficiais, ausências e filtros; mantém os testes de ranking.
-- `CHANGELOG.md` — registra a alteração.
+## Instalação
+Substitua os arquivos equivalentes no projeto, preservando as rotas estáticas `/static/app.css`, `/static/app.js` e `/static/logo.png`. Faça commit e push para acionar o deploy do Railway.
 
-## Aplicação
-
-Copie os arquivos mantendo os caminhos relativos para a raiz do projeto existente. O pacote é uma atualização parcial, não substitui o restante do projeto. Preserve a configuração, as credenciais e os demais módulos existentes.
-
-Execute os testes no ambiente do projeto (`python -m pytest -q`). Faça primeiro deploy de homologação e confira a auditoria e o painel. A importação da planilha e o deploy no Railway não são realizados por este pacote.
-
-## Regra de contagem
-
-Contam-se valores distintos de `TIPO ESPECIALIDADE`, ignorando diferenças apenas de maiúsculas/minúsculas e espaços repetidos nas comparações. A grafia exibida mantém o valor da planilha. Campos vazios e `NÃO INFORMADO` não entram na contagem de categorias válidas; são informados separadamente como linhas sem classificação. Frequências representam linhas, não prestadores únicos.
+O login deve ser validado no Railway após o deploy; este pacote não contém nem altera o backend. Os efeitos são locais, adaptáveis a celular e respeitam `prefers-reduced-motion`.

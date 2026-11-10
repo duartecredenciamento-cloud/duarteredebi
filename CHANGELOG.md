@@ -26,11 +26,12 @@
 - A cache é local a cada processo (não compartilhada entre réplicas).
 - Não houve deploy, conexão a serviço Railway, migração de banco ou importação real.
 
-## Atualização do indicador de tipos
 
-- O indicador agora lê diretamente a classificação oficial da coluna `TIPO ESPECIALIDADE`; nenhum mapeamento é inferido.
-- Exibe a quantidade de valores distintos, a frequência por valor e os totais de linhas classificadas e sem classificação.
-- Valores vazios e `NÃO INFORMADO` ficam fora da contagem de categorias e são apresentados separadamente.
-- A auditoria administrativa deixou de descrever os tipos como pendentes.
-- Incluídos testes para leitura da coluna oficial, ausências, valores de grafia equivalente e filtros; os dados de origem não são modificados.
-- Testes/deploy e importação real devem ser confirmados no ambiente do projeto; este pacote não publica no Railway.
+## 2.0.0 — Executive Intelligence Duarte
+
+- Reformulação do panorama, navegação lateral recolhível, cabeçalho executivo e layout responsivo.
+- Mapa vetorial interativo por UF com seleção de estado, usando agregados centralizados de prestadores únicos e geometrias públicas do IBGE carregadas sob demanda.
+- Rankings TOP 10/BOTTOM 10, distribuição por região e tipos oficiais com percentuais, estados sem registros identificados como tais e feedback de atualização/erro.
+- API do dashboard passa a informar `by_state` e a data/hora mais recente de atualização da base.
+- Mantidos autenticação, perfis, permissões, importação, auditoria, exportações, filtros e esquema do banco.
+- Testes ampliados para classificação oficial por registro e consistência das contagens estaduais.

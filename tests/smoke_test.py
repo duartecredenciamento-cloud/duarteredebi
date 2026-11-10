@@ -18,6 +18,7 @@ assert 'id="statuses"' not in html
 js = (ROOT / "app/static/app.js").read_text(encoding="utf-8")
 assert "/api/admin/imports/confirm" in js and "data-detail" in js
 assert "/api/admin/data-audit" in js and "dashboardFilters" in js
+assert "by_state" in js and "TIPO ESPECIALIDADE" in js and "sidebarToggle" in js
 css = (ROOT / "app/static/app.css").read_text(encoding="utf-8")
 assert "[hidden]{display:none!important}" in css
 print("Smoke test estrutural: OK")

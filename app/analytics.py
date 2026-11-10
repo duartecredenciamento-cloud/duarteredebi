@@ -123,6 +123,41 @@ def _specialty_groups(groups: dict[tuple[str, str], list[Any]]) -> list[dict[str
     return sorted(out, key=lambda item: (-item["count"], normalized_text(item["label"])))
 
 
+def _state_groups(groups: dict[tuple[str, str], list[Any]]) -> list[dict[str, Any]]:
+    """Contagem geográfica com a mesma identidade única das demais métricas."""
+    counts: dict[str, int] = defaultdict(int)
+    names = {uf: name for states in STATE_REGIONS.values() for uf, name in states.items()}
+    for members in groups.values():
+        for row in members:
+            uf, _ = normalize_uf(_get(row, "uf", "UF"))
+            if uf != MISSING:
+                counts[uf] += 1
+                break
+    total = len(groups)
+    return [{"uf": uf, "label": names[uf], "count": counts[uf],
+             "share": round(counts[uf] * 100 / total, 2) if total else 0}
+            for uf in sorted(counts)]
+
+
+def _specialty_type_groups(rows: list[Any]) -> dict[str, Any]:
+    """Usa diretamente TIPO ESPECIALIDADE por registro, sem inferir categorias."""
+    grouped: dict[str, dict[str, Any]] = {}
+    missing = 0
+    for row in rows:
+        label = display_text(_get(row, "specialty_type", "TIPO ESPECIALIDADE"))
+        key = normalized_text(label)
+        if key in {"", "nao informado"}:
+            missing += 1
+            continue
+        item = grouped.setdefault(key, {"label": label, "records": 0})
+        item["records"] += 1
+    values = sorted(grouped.values(), key=lambda item: (-item["records"], normalized_text(item["label"])))
+    return {"status": "available", "count": len(values), "values": values,
+            "valid_records": sum(item["records"] for item in values), "missing_records": missing,
+            "source_column": "TIPO ESPECIALIDADE",
+            "note": "Classificação oficial por registro. Vazios e NÃO INFORMADO ficam fora da contagem de categorias."}
+
+
 def _region_groups(groups: dict[tuple[str, str], list[Any]]) -> tuple[list[dict[str, Any]], int]:
     counts: dict[str, int] = defaultdict(int)
     states: dict[str, set[str]] = defaultdict(set)
@@ -153,42 +188,14 @@ def _region_groups(groups: dict[tuple[str, str], list[Any]]) -> tuple[list[dict[
     return result, without_uf
 
 
-def _specialty_type_summary(rows: Iterable[Any]) -> dict[str, Any]:
-    """Summarize official values in TIPO ESPECIALIDADE; never infer a mapping."""
-    labels: dict[str, str] = {}
-    counts: dict[str, int] = defaultdict(int)
-    missing = 0
-    missing_key = normalized_text(MISSING)
-    for row in rows:
-        label = display_text(_get(row, "specialty_type", "TIPO ESPECIALIDADE"))
-        if not label or normalized_text(label) == missing_key:
-            missing += 1
-            continue
-        # Collapse whitespace and casing only; preserve the official spelling/accents.
-        key = " ".join(label.split()).casefold()
-        labels.setdefault(key, label)
-        counts[key] += 1
-    values = [
-        {"label": labels[key], "records": counts[key]}
-        for key in sorted(labels, key=lambda item: (normalized_text(labels[item]), labels[item]))
-    ]
-    return {
-        "status": "available" if values else "no_values",
-        "count": len(values),
-        "mapping_attached": True,
-        "source_column": "TIPO ESPECIALIDADE",
-        "valid_records": sum(counts.values()),
-        "missing_records": missing,
-        "values": values,
-    }
-
-
 def aggregate_providers(rows: Iterable[Any], filters: dict[str, str] | None = None) -> dict[str, Any]:
     """Calcula KPIs, distribuição regional, rankings e auditoria sobre uma só deduplicação."""
     filtered = [row for row in rows if matches_filter(row, filters or {})]
     groups = deduplicate_providers(filtered)
     total = len(groups)
     by_region, missing_uf = _region_groups(groups)
+    by_state = _state_groups(groups)
+    specialty_types = _specialty_type_groups(filtered)
     specialties = _specialty_groups(groups)
     top = specialties[:10]
     bottom = sorted(specialties, key=lambda item: (item["count"], normalized_text(item["label"])))[:10]
@@ -208,7 +215,6 @@ def aggregate_providers(rows: Iterable[Any], filters: dict[str, str] | None = No
 
     raw_count = len(filtered)
     raw_missing_uf = sum(1 for row in filtered if normalize_uf(_get(row, "uf", "UF"))[0] == MISSING)
-    specialty_types = _specialty_type_summary(filtered)
     return {
         "total_records": total,
         "total_providers": total,
@@ -221,6 +227,7 @@ def aggregate_providers(rows: Iterable[Any], filters: dict[str, str] | None = No
         "municipalities": len(municipalities),
         "specialty_count": len(specialties),
         "by_region": by_region,
+        "by_state": by_state,
         "by_specialty": top,
         "top_specialties": top,
         "smallest_specialties": bottom,

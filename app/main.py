@@ -30,8 +30,8 @@ def dashboard_rows(db):
     now = time.monotonic()
     if _dashboard_cache["rows"] is not None and now - _dashboard_cache["at"] < 45:
         return _dashboard_cache["rows"]
-    columns = (ProviderRecord.id, ProviderRecord.data, ProviderRecord.business_name, ProviderRecord.tax_id, ProviderRecord.specialty, ProviderRecord.municipality, ProviderRecord.uf, ProviderRecord.priority)
-    rows = [dict(zip(("id", "data", "business_name", "tax_id", "specialty", "municipality", "uf", "priority"), row))
+    columns = (ProviderRecord.id, ProviderRecord.data, ProviderRecord.business_name, ProviderRecord.tax_id, ProviderRecord.specialty, ProviderRecord.municipality, ProviderRecord.uf, ProviderRecord.priority, ProviderRecord.updated_at)
+    rows = [dict(zip(("id", "data", "business_name", "tax_id", "specialty", "municipality", "uf", "priority", "updated_at"), row))
             for row in db.execute(select(*columns).where(ProviderRecord.active.is_(True)).order_by(ProviderRecord.id))]
     _dashboard_cache.update(at=now, rows=rows)
     return rows
@@ -190,7 +190,10 @@ def change_password(body: PasswordChange, request: Request, user: User = Depends
 def dashboard(region: str = "", specialty: str = "", municipality: str = "", uf: str = "",
               user: User = Depends(require_user), db: DBSession = Depends(get_db)):
     filters = {"region": region, "specialty": specialty, "municipality": municipality, "uf": uf}
-    result = aggregate_providers(dashboard_rows(db), filters)
+    rows = dashboard_rows(db)
+    result = aggregate_providers(rows, filters)
+    latest = max((row.get("updated_at") for row in rows if row.get("updated_at") is not None), default=None)
+    result["last_updated_at"] = latest.isoformat() if hasattr(latest, "isoformat") else (str(latest) if latest else None)
     result["role"] = user.role
     result["filters"] = {k: v for k, v in filters.items() if v.strip()}
     return result
