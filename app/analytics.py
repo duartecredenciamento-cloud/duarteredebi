@@ -158,14 +158,14 @@ def _state_groups(groups: dict[tuple[str, str], list[Any]]) -> list[dict[str, An
 
 
 def _official_type_value(row: Any) -> Any:
-    """Lê somente o cabeçalho oficial TIPO ESPECIALIDADE do dado bruto armazenado."""
+    """Lê somente o cabeçalho oficial TIPO do dado bruto armazenado."""
     if isinstance(row, dict):
         source = row.get("data") if isinstance(row.get("data"), dict) else row
     else:
         source = getattr(row, "data", {}) or {}
     if not isinstance(source, dict):
         return ""
-    wanted = normalized_text("TIPO ESPECIALIDADE").replace(" ", "")
+    wanted = normalized_text("TIPO").replace(" ", "")
     for key, value in source.items():
         if normalized_text(key).replace(" ", "") == wanted:
             return value
@@ -188,7 +188,7 @@ def _specialty_type_groups(rows: list[Any]) -> dict[str, Any]:
     values = sorted(grouped.values(), key=lambda item: (-item["records"], normalized_text(item["label"])))
     return {"status": "available", "count": len(values), "values": values,
             "valid_records": sum(item["records"] for item in values), "missing_records": missing,
-            "source_column": "TIPO ESPECIALIDADE",
+            "source_column": "TIPO",
             "note": "Classificação oficial por registro. Vazios e NÃO INFORMADO ficam fora da contagem de categorias."}
 
 def _region_groups(groups: dict[tuple[str, str], list[Any]]) -> tuple[list[dict[str, Any]], int]:

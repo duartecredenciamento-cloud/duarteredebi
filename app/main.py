@@ -202,7 +202,7 @@ def dashboard(region: str = "", specialty: str = "", municipality: str = "", uf:
 def data_audit(user: User = Depends(admin_user), db: DBSession = Depends(get_db)):
     result = aggregate_providers(dashboard_rows(db))
     result["specialty_types"]["note"] = (
-        "Classificação lida diretamente da coluna oficial TIPO ESPECIALIDADE. "
+        "Classificação lida diretamente da coluna oficial TIPO. "
         "Valores vazios e NÃO INFORMADO são excluídos da contagem de categorias."
     )
     return result
