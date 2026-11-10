@@ -11,11 +11,30 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session as DBSession
 from .config import BASE_DIR, COOKIE_SECURE, MAX_UPLOAD_BYTES, SESSION_SECRET, STAGING_DIR
+from .analytics import aggregate_providers
+import time
 from .database import Base, SessionLocal, engine
 from .models import AuditLog, ImportBatch, LoginThrottle, ProviderRecord, Session, User, utcnow
 from .security import COOKIE_NAME, create_session, current_user, digits, hash_password, require_admin, signed_token, valid_cpf, verify_password
 
 app = FastAPI(title="BI Rede Duarte", version="1.0.0", docs_url=None, redoc_url=None)
+
+# Cache de leitura curto: limita custo de agregação da base, invalidado nas mutações.
+_dashboard_cache = {"at": 0.0, "rows": None}
+
+def invalidate_dashboard_cache():
+    _dashboard_cache["at"] = 0.0
+    _dashboard_cache["rows"] = None
+
+def dashboard_rows(db):
+    now = time.monotonic()
+    if _dashboard_cache["rows"] is not None and now - _dashboard_cache["at"] < 45:
+        return _dashboard_cache["rows"]
+    columns = (ProviderRecord.id, ProviderRecord.data, ProviderRecord.business_name, ProviderRecord.tax_id, ProviderRecord.specialty, ProviderRecord.municipality, ProviderRecord.uf, ProviderRecord.priority)
+    rows = [dict(zip(("id", "data", "business_name", "tax_id", "specialty", "municipality", "uf", "priority"), row))
+            for row in db.execute(select(*columns).where(ProviderRecord.active.is_(True)).order_by(ProviderRecord.id))]
+    _dashboard_cache.update(at=now, rows=rows)
+    return rows
 app.mount("/static", StaticFiles(directory=BASE_DIR / "app" / "static"), name="static")
 
 class LoginBody(BaseModel):
@@ -168,16 +187,20 @@ def change_password(body: PasswordChange, request: Request, user: User = Depends
     from fastapi.responses import JSONResponse
     out = JSONResponse({"ok": True, "message": "Senha atualizada. Entre novamente."}); out.delete_cookie(COOKIE_NAME, path="/"); return out
 @app.get("/api/dashboard")
-def dashboard(user: User = Depends(require_user), db: DBSession = Depends(get_db)):
-    active = ProviderRecord.active.is_(True)
-    total = db.scalar(select(func.count(ProviderRecord.id)).where(active)) or 0
-    return {"total_records": total,
-            "active_status": db.scalar(select(func.count(ProviderRecord.id)).where(active, func.lower(ProviderRecord.status).in_(["ativo", "ativa", "atualizado", "credenciado"]))) or 0,
-            "priority": db.scalar(select(func.count(ProviderRecord.id)).where(active, func.lower(ProviderRecord.priority).in_(["sim", "alta", "prioritário", "prioritario"]))) or 0,
-            "municipalities": db.scalar(select(func.count(func.distinct(ProviderRecord.municipality))).where(active, ProviderRecord.municipality != "")) or 0,
-            "by_region": by_dimension(db, ProviderRecord.region), "by_specialty": by_dimension(db, ProviderRecord.specialty),
-            "by_status": by_dimension(db, ProviderRecord.status, 8), "by_uf": by_dimension(db, ProviderRecord.uf, 12),
-            "role": user.role}
+def dashboard(region: str = "", specialty: str = "", municipality: str = "", uf: str = "",
+              user: User = Depends(require_user), db: DBSession = Depends(get_db)):
+    filters = {"region": region, "specialty": specialty, "municipality": municipality, "uf": uf}
+    result = aggregate_providers(dashboard_rows(db), filters)
+    result["role"] = user.role
+    result["filters"] = {k: v for k, v in filters.items() if v.strip()}
+    return result
+
+@app.get("/api/admin/data-audit")
+def data_audit(user: User = Depends(admin_user), db: DBSession = Depends(get_db)):
+    result = aggregate_providers(dashboard_rows(db))
+    result["specialty_types"]["unmapped_values"] = result["normalized_specialties"]
+    result["specialty_types"]["note"] = "Regra oficial/anexo ainda não fornecido; nenhum tipo foi inferido."
+    return result
 @app.get("/api/records")
 def records(q: str = "", specialty: str = "", municipality: str = "", uf: str = "", status: str = "", service: str = "", priority: str = "", page: int = 1, page_size: int = 25,
             user: User = Depends(require_user), db: DBSession = Depends(get_db)):
@@ -214,7 +237,7 @@ def record_detail(record_id: int, user: User = Depends(require_user), db: DBSess
 @app.post("/api/admin/records")
 def create_record(body: RecordBody, user: User = Depends(editor_user), db: DBSession = Depends(get_db)):
     row = pack_record({str(k): clean_cell(v) for k, v in body.data.items()})
-    db.add(row); db.flush(); audit(db, user.id, "CREATE_RECORD", f"record_id={row.id}"); db.commit()
+    db.add(row); db.flush(); audit(db, user.id, "CREATE_RECORD", f"record_id={row.id}"); db.commit(); invalidate_dashboard_cache()
     return {"id": row.id}
 @app.put("/api/admin/records/{record_id}")
 def update_record(record_id: int, body: RecordBody, user: User = Depends(editor_user), db: DBSession = Depends(get_db)):
@@ -223,12 +246,12 @@ def update_record(record_id: int, body: RecordBody, user: User = Depends(editor_
     fresh = pack_record({str(k): clean_cell(v) for k, v in body.data.items()})
     for key in ("data", "business_name", "trade_name", "tax_id", "specialty", "service", "category", "status", "municipality", "uf", "region", "priority", "classification", "cnes", "search_text"):
         setattr(row, key, getattr(fresh, key))
-    audit(db, user.id, "UPDATE_RECORD", f"record_id={record_id}"); db.commit(); return {"ok": True}
+    audit(db, user.id, "UPDATE_RECORD", f"record_id={record_id}"); db.commit(); invalidate_dashboard_cache(); return {"ok": True}
 @app.delete("/api/admin/records/{record_id}")
 def deactivate_record(record_id: int, user: User = Depends(admin_user), db: DBSession = Depends(get_db)):
     row = db.get(ProviderRecord, record_id)
     if not row or not row.active: raise HTTPException(404, "Registro não encontrado.")
-    row.active = False; audit(db, user.id, "DEACTIVATE_RECORD", f"record_id={record_id}"); db.commit(); return {"ok": True}
+    row.active = False; audit(db, user.id, "DEACTIVATE_RECORD", f"record_id={record_id}"); db.commit(); invalidate_dashboard_cache(); return {"ok": True}
 
 def excel_rows(content: bytes):
     try:
@@ -290,7 +313,7 @@ def confirm_import(body: ConfirmImport, user: User = Depends(admin_user), db: DB
             if count % 1000 == 0: db.flush()
         db.add(ImportBatch(filename=staged["filename"], fingerprint=staged["fingerprint"], row_count=count, blank_rows=staged.get("blank_rows", 0), imported_by=user.id))
         audit(db, user.id, "IMPORT_XLSX", f"{staged['filename']}: {count} linhas")
-        db.commit()
+        db.commit(); invalidate_dashboard_cache()
     except Exception:
         db.rollback(); raise
     path.unlink(missing_ok=True); workbook_path.unlink(missing_ok=True)
