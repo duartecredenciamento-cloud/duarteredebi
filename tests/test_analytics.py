@@ -81,6 +81,21 @@ def test_specialty_type_reads_official_column_and_excludes_missing_values():
     assert types["source_column"] == "TIPO ESPECIALIDADE"
 
 
+
+def test_specialty_type_never_falls_back_to_specialty_or_legacy_fields():
+    rows = [
+        {"id": 1, "business_name": "A", "specialty": "Centro de Diagnóstico",
+         "specialty_type": "Centro de Diagnóstico", "data": {"ESPECIALIDADE": "Centro de Diagnóstico"}},
+        {"id": 2, "business_name": "B", "ESPECIALIDADE": "Hospital",
+         "TIPO ESPECIALIDADE": "HOSPITAL"},
+    ]
+    types = aggregate_providers(rows)["specialty_types"]
+    assert types["values"] == [{"label": "HOSPITAL", "records": 1}]
+    assert types["count"] == 1
+    assert types["valid_records"] == 1 and types["missing_records"] == 1
+    assert types["source_column"] == "TIPO ESPECIALIDADE"
+
+
 def test_state_series_uses_unique_provider_identity_and_keeps_unknown_separate():
     result = aggregate_providers([
         row(1, "12345678901", "A", "Cardiologia", "SP"),
@@ -143,3 +158,6 @@ def test_frontend_has_responsive_breakpoints_and_login_hidden_rule():
     assert 'COBERTURA DE UF' in html and 'STATUS ATIVO' not in html
     assert '.topbar-right{flex:0 1 auto;min-width:0;justify-content:flex-end;}' in css
     assert 'state-distribution-panel' in css
+    js = (root / "app/static/app.js").read_text(encoding="utf-8")
+    assert "types?.source_column==='TIPO ESPECIALIDADE'" in js
+    assert "officialTypeValues(types)" in js

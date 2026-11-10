@@ -15,11 +15,16 @@ html = (ROOT / "app/static/index.html").read_text(encoding="utf-8")
 assert "BI Rede Duarte" in html and "/static/app.js" in html
 assert 'id="kSpecialties"' in html and 'id="kStates"' in html and 'id="stateProviders"' in html
 assert 'specialtiesBottom' not in html and 'COBERTURA DE UF' in html
+assert 'ATENÇÃO PRIORITÁRIA' not in html and 'id="kPriority"' not in html
+assert 'id="exportSearch"' in html
 assert 'id="statuses"' not in html
 js = (ROOT / "app/static/app.js").read_text(encoding="utf-8")
 assert "/api/admin/imports/confirm" in js and "data-detail" in js
 assert "/api/admin/data-audit" in js and "dashboardFilters" in js
+assert "/api/admin/records/export.xlsx" in js
 assert "by_state" in js and "TIPO ESPECIALIDADE" in js and "sidebarToggle" in js
 css = (ROOT / "app/static/app.css").read_text(encoding="utf-8")
+main = (ROOT / "app/main.py").read_text(encoding="utf-8")
 assert "[hidden]{display:none!important}" in css
+assert "records_filter_statement" in main and "/api/admin/records/export.xlsx" in main
 print("Smoke test estrutural: OK")

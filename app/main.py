@@ -206,6 +206,22 @@ def data_audit(user: User = Depends(admin_user), db: DBSession = Depends(get_db)
         "Valores vazios e NÃO INFORMADO são excluídos da contagem de categorias."
     )
     return result
+def records_filter_statement(q="", specialty="", municipality="", uf="", status="", service="", priority=""):
+    """Única definição dos filtros da pesquisa paginada e da exportação."""
+    if len(q.strip()) == 1:
+        raise HTTPException(400, "Digite ao menos 2 caracteres para pesquisar.")
+    stmt = select(ProviderRecord).where(ProviderRecord.active.is_(True))
+    if q.strip():
+        term = q.strip()[:120]
+        slash = chr(92)
+        escaped = term.replace(slash, slash * 2).replace("%", slash + "%").replace("_", slash + "_")
+        like = escaped + "%"
+        stmt = stmt.where(or_(ProviderRecord.business_name.ilike(like, escape=slash), ProviderRecord.trade_name.ilike(like, escape=slash), ProviderRecord.tax_id.ilike(like, escape=slash), ProviderRecord.cnes.ilike(like, escape=slash), ProviderRecord.specialty.ilike(like, escape=slash), ProviderRecord.search_text.ilike("%" + escaped + "%", escape=slash)))
+    for col, value in [(ProviderRecord.specialty, specialty), (ProviderRecord.municipality, municipality), (ProviderRecord.uf, uf), (ProviderRecord.status, status), (ProviderRecord.service, service), (ProviderRecord.priority, priority)]:
+        if value.strip():
+            stmt = stmt.where(col.ilike("%" + value.strip()[:120] + "%"))
+    return stmt
+
 @app.get("/api/records")
 def records(q: str = "", specialty: str = "", municipality: str = "", uf: str = "", status: str = "", service: str = "", priority: str = "", page: int = 1, page_size: int = 25,
             user: User = Depends(require_user), db: DBSession = Depends(get_db)):
@@ -218,21 +234,57 @@ def records(q: str = "", specialty: str = "", municipality: str = "", uf: str = 
     if len(q.strip()) == 1:
         raise HTTPException(400, "Digite ao menos 2 caracteres para pesquisar.")
     page_size = min(page_size, 50)
-    stmt = select(ProviderRecord).where(ProviderRecord.active.is_(True))
-    if q.strip():
-        term = q.strip()[:120]
-        if len(term) < 2: raise HTTPException(400, "Digite ao menos 2 caracteres para pesquisar.")
-        escaped = term.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
-        like = escaped + "%"
-        stmt = stmt.where(or_(ProviderRecord.business_name.ilike(like, escape="\\"), ProviderRecord.trade_name.ilike(like, escape="\\"), ProviderRecord.tax_id.ilike(like, escape="\\"), ProviderRecord.cnes.ilike(like, escape="\\"), ProviderRecord.specialty.ilike(like, escape="\\"), ProviderRecord.search_text.ilike("%" + escaped + "%", escape="\\")))
-    for col, value in [(ProviderRecord.specialty, specialty), (ProviderRecord.municipality, municipality), (ProviderRecord.uf, uf), (ProviderRecord.status, status), (ProviderRecord.service, service), (ProviderRecord.priority, priority)]:
-        if value.strip(): stmt = stmt.where(col.ilike("%" + value.strip()[:120] + "%"))
+    stmt = records_filter_statement(q, specialty, municipality, uf, status, service, priority)
     count = db.scalar(select(func.count()).select_from(stmt.subquery())) or 0
     rows = db.scalars(stmt.order_by(ProviderRecord.business_name, ProviderRecord.id).offset((page-1)*page_size).limit(page_size)).all()
     audit(db, user.id, "SEARCH", f"q={q[:30]} page={page} results={len(rows)}"); db.commit()
     pages = (count + page_size - 1)//page_size
     if user.role != "admin": pages = min(pages, 20)
     return {"items": [safe_record(row, user.role == "admin") for row in rows], "total": count, "page": page, "page_size": page_size, "pages": pages}
+@app.get("/api/admin/records/export.xlsx")
+def export_filtered_records_xlsx(q: str = "", specialty: str = "", municipality: str = "", uf: str = "", status: str = "", service: str = "", priority: str = "", user: User = Depends(admin_user), db: DBSession = Depends(get_db)):
+    """Exporta todos os resultados correspondentes aos filtros, sem paginação."""
+    from openpyxl import Workbook
+
+    stmt = records_filter_statement(q, specialty, municipality, uf, status, service, priority)
+    ordered = stmt.order_by(ProviderRecord.business_name, ProviderRecord.id)
+    fields, seen, total = [], set(), 0
+    for row in db.scalars(ordered).yield_per(1000):
+        total += 1
+        for key in (row.data or {}).keys():
+            if key != "ID INTERNO" and key not in seen:
+                fields.append(key)
+                seen.add(key)
+    fields.append("ID INTERNO")
+
+    workbook = Workbook(write_only=True)
+    sheet = workbook.create_sheet("BANCO REDE")
+    sheet.append(fields)
+    rows_in_sheet = 0
+    sheet_number = 1
+    for row in db.scalars(ordered).yield_per(1000):
+        if rows_in_sheet >= 1_048_575:
+            sheet_number += 1
+            sheet = workbook.create_sheet(f"RESULTADOS {sheet_number}")
+            sheet.append(fields)
+            rows_in_sheet = 0
+        data = row.data or {}
+        sheet.append([row.id if field == "ID INTERNO" else data.get(field, "") for field in fields])
+        rows_in_sheet += 1
+
+    handle, name = tempfile.mkstemp(prefix="bi-rede-duarte-pesquisa-", suffix=".xlsx")
+    os.close(handle)
+    path = Path(name)
+    try:
+        workbook.save(name)
+        criteria_count = sum(bool(value.strip()) for value in (q, specialty, municipality, uf, status, service, priority))
+        audit(db, user.id, "EXPORT_FILTERED_XLSX", f"{total} linhas exportadas; {criteria_count} filtros aplicados")
+        db.commit()
+    except Exception:
+        path.unlink(missing_ok=True)
+        raise
+    return FileResponse(path, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", filename="BI_REDE_DUARTE_resultados_pesquisa.xlsx", background=BackgroundTask(lambda: path.unlink(missing_ok=True)))
+
 @app.get("/api/records/{record_id}")
 def record_detail(record_id: int, user: User = Depends(require_user), db: DBSession = Depends(get_db)):
     row = db.get(ProviderRecord, record_id)

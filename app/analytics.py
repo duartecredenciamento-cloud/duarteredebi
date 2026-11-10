@@ -157,16 +157,32 @@ def _state_groups(groups: dict[tuple[str, str], list[Any]]) -> list[dict[str, An
     return sorted(result, key=lambda item: (-item["count"], item["label"].casefold()))
 
 
+def _official_type_value(row: Any) -> Any:
+    """Lê somente o cabeçalho oficial TIPO ESPECIALIDADE do dado bruto armazenado."""
+    if isinstance(row, dict):
+        source = row.get("data") if isinstance(row.get("data"), dict) else row
+    else:
+        source = getattr(row, "data", {}) or {}
+    if not isinstance(source, dict):
+        return ""
+    wanted = normalized_text("TIPO ESPECIALIDADE").replace(" ", "")
+    for key, value in source.items():
+        if normalized_text(key).replace(" ", "") == wanted:
+            return value
+    return ""
+
+
 def _specialty_type_groups(rows: list[Any]) -> dict[str, Any]:
-    """Usa diretamente TIPO ESPECIALIDADE por registro, sem inferir categorias."""
+    """Agrupa valores da coluna oficial por registro, sem fallback ou mapeamento."""
     grouped: dict[str, dict[str, Any]] = {}
     missing = 0
     for row in rows:
-        label = display_text(_get(row, "specialty_type", "TIPO ESPECIALIDADE"))
-        key = normalized_text(label)
-        if key in {"", "nao informado"}:
+        label = display_text(_official_type_value(row))
+        if normalized_text(label) in {"", "nao informado"}:
             missing += 1
             continue
+        # Só colapsa caixa e espaços. Não remove acentos/pontuação nem cria equivalências.
+        key = label.casefold()
         item = grouped.setdefault(key, {"label": label, "records": 0})
         item["records"] += 1
     values = sorted(grouped.values(), key=lambda item: (-item["records"], normalized_text(item["label"])))
@@ -174,7 +190,6 @@ def _specialty_type_groups(rows: list[Any]) -> dict[str, Any]:
             "valid_records": sum(item["records"] for item in values), "missing_records": missing,
             "source_column": "TIPO ESPECIALIDADE",
             "note": "Classificação oficial por registro. Vazios e NÃO INFORMADO ficam fora da contagem de categorias."}
-
 
 def _region_groups(groups: dict[tuple[str, str], list[Any]]) -> tuple[list[dict[str, Any]], int]:
     counts: dict[str, int] = defaultdict(int)

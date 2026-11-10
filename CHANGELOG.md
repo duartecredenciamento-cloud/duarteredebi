@@ -34,4 +34,19 @@
 - Rankings TOP 10/BOTTOM 10, distribuição por região e tipos oficiais com percentuais, estados sem registros identificados como tais e feedback de atualização/erro.
 - API do dashboard passa a informar `by_state` e a data/hora mais recente de atualização da base.
 - Mantidos autenticação, perfis, permissões, importação, auditoria, exportações, filtros e esquema do banco.
+
+## Complemento — remoção de cartão e exportação filtrada
+
+- Removido do panorama o cartão “Atenção prioritária” marcado na captura; os demais quatro indicadores foram preservados e reequilibrados.
+- Adicionado botão XLSX após pesquisas com resultados, com os filtros atuais e exportação de todas as páginas.
+- Consulta e exportação usam o mesmo construtor de filtros no backend.
+- A rota continua restrita ao Administrador Master e registra o evento no histórico administrativo.
 - Testes ampliados para classificação oficial por registro e consistência das contagens estaduais.
+
+
+## Correção — fonte exclusiva para tipos de especialidade
+
+- A agregação lê os tipos somente do cabeçalho oficial `TIPO ESPECIALIDADE` no dado bruto; removeu-se qualquer caminho de fallback para `ESPECIALIDADE`, `specialty` ou `specialty_type` derivados.
+- A interface e a auditoria ocultam a distribuição quando a API não confirma explicitamente `source_column: TIPO ESPECIALIDADE`.
+- A normalização não remove mais diferenças de acento ou pontuação entre categorias oficiais; apenas caixa e espaços são consolidados.
+- Incluído teste de regressão com valores de especialidade que não podem aparecer na distribuição de tipos.

@@ -11,4 +11,7 @@ Pacote visual para substituir a tela de login do BI Rede Duarte. Mantém o endpo
 ## Instalação
 Substitua os arquivos equivalentes no projeto, preservando as rotas estáticas `/static/app.css`, `/static/app.js` e `/static/logo.png`. Faça commit e push para acionar o deploy do Railway.
 
-O login deve ser validado no Railway após o deploy; este pacote não contém nem altera o backend. Os efeitos são locais, adaptáveis a celular e respeitam `prefers-reduced-motion`.
+O pacote mantém o backend e os fluxos já existentes. Após a instalação, valide o login e as funções no ambiente de homologação antes do deploy no Railway.
+
+## Complemento de pesquisa
+O cartão “Atenção prioritária” foi removido do Panorama Executivo. Na página Prestadores, o Administrador Master pode exportar em Excel todos os registros da busca atual, com os mesmos filtros, independentemente da paginação exibida. A exportação usa uma rota autenticada, preserva as colunas da origem e é registrada no histórico administrativo.
