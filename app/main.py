@@ -198,8 +198,10 @@ def dashboard(region: str = "", specialty: str = "", municipality: str = "", uf:
 @app.get("/api/admin/data-audit")
 def data_audit(user: User = Depends(admin_user), db: DBSession = Depends(get_db)):
     result = aggregate_providers(dashboard_rows(db))
-    result["specialty_types"]["unmapped_values"] = result["normalized_specialties"]
-    result["specialty_types"]["note"] = "Regra oficial/anexo ainda não fornecido; nenhum tipo foi inferido."
+    result["specialty_types"]["note"] = (
+        "Classificação lida diretamente da coluna oficial TIPO ESPECIALIDADE. "
+        "Valores vazios e NÃO INFORMADO são excluídos da contagem de categorias."
+    )
     return result
 @app.get("/api/records")
 def records(q: str = "", specialty: str = "", municipality: str = "", uf: str = "", status: str = "", service: str = "", priority: str = "", page: int = 1, page_size: int = 25,

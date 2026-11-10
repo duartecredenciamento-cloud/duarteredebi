@@ -66,9 +66,40 @@ def test_top_and_bottom_specialty_rankings_exclude_zeroes_and_handle_small_sets(
     assert all(x["count"] > 0 for x in result["smallest_specialties"])
 
 
-def test_specialty_type_indicator_is_pending_without_official_mapping():
-    result = aggregate_providers([row(1, "12345678901", "A", "Cardiologia")])
-    assert result["specialty_types"] == {"status": "awaiting_official_mapping", "count": None, "mapping_attached": False}
+def test_specialty_types_use_official_column_and_exclude_missing_values():
+    rows = [
+        {**row(1, "12345678901", "A", "Cardiologia"), "specialty_type": "HOSPITAL"},
+        {**row(2, "12345678902", "B", "Ortopedia"), "specialty_type": "Hospital"},
+        {**row(3, "12345678903", "C", "Pediatria"), "data": {"TIPO ESPECIALIDADE": "TERAPIA"}},
+        {**row(4, "12345678904", "D", "Dermatologia"), "specialty_type": ""},
+        {**row(5, "12345678905", "E", "Neurologia"), "specialty_type": " NÃO INFORMADO "},
+    ]
+    result = aggregate_providers(rows)["specialty_types"]
+    assert result["status"] == "available"
+    assert result["count"] == 2
+    assert result["mapping_attached"] is True
+    assert result["source_column"] == "TIPO ESPECIALIDADE"
+    assert result["valid_records"] == 3
+    assert result["missing_records"] == 2
+    assert {x["label"]: x["records"] for x in result["values"]} == {"HOSPITAL": 2, "TERAPIA": 1}
+
+
+def test_specialty_types_follow_dashboard_filters():
+    rows = [
+        {**row(1, "12345678901", "A", "Cardiologia"), "specialty_type": "CLÍNICA"},
+        {**row(2, "12345678902", "B", "Ortopedia"), "specialty_type": "HOSPITAL"},
+    ]
+    result = aggregate_providers(rows, {"specialty": "cardiologia"})["specialty_types"]
+    assert result["count"] == 1
+    assert result["values"] == [{"label": "CLÍNICA", "records": 1}]
+
+
+def test_specialty_type_indicator_empty_values_is_zero_not_pending():
+    result = aggregate_providers([row(1, "12345678901", "A", "Cardiologia")])["specialty_types"]
+    assert result["status"] == "no_values"
+    assert result["count"] == 0
+    assert result["valid_records"] == 0
+    assert result["missing_records"] == 1
 
 
 def test_dashboard_totals_region_and_specialty_groups_reconcile():

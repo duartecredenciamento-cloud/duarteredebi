@@ -153,6 +153,36 @@ def _region_groups(groups: dict[tuple[str, str], list[Any]]) -> tuple[list[dict[
     return result, without_uf
 
 
+def _specialty_type_summary(rows: Iterable[Any]) -> dict[str, Any]:
+    """Summarize official values in TIPO ESPECIALIDADE; never infer a mapping."""
+    labels: dict[str, str] = {}
+    counts: dict[str, int] = defaultdict(int)
+    missing = 0
+    missing_key = normalized_text(MISSING)
+    for row in rows:
+        label = display_text(_get(row, "specialty_type", "TIPO ESPECIALIDADE"))
+        if not label or normalized_text(label) == missing_key:
+            missing += 1
+            continue
+        # Collapse whitespace and casing only; preserve the official spelling/accents.
+        key = " ".join(label.split()).casefold()
+        labels.setdefault(key, label)
+        counts[key] += 1
+    values = [
+        {"label": labels[key], "records": counts[key]}
+        for key in sorted(labels, key=lambda item: (normalized_text(labels[item]), labels[item]))
+    ]
+    return {
+        "status": "available" if values else "no_values",
+        "count": len(values),
+        "mapping_attached": True,
+        "source_column": "TIPO ESPECIALIDADE",
+        "valid_records": sum(counts.values()),
+        "missing_records": missing,
+        "values": values,
+    }
+
+
 def aggregate_providers(rows: Iterable[Any], filters: dict[str, str] | None = None) -> dict[str, Any]:
     """Calcula KPIs, distribuição regional, rankings e auditoria sobre uma só deduplicação."""
     filtered = [row for row in rows if matches_filter(row, filters or {})]
@@ -178,6 +208,7 @@ def aggregate_providers(rows: Iterable[Any], filters: dict[str, str] | None = No
 
     raw_count = len(filtered)
     raw_missing_uf = sum(1 for row in filtered if normalize_uf(_get(row, "uf", "UF"))[0] == MISSING)
+    specialty_types = _specialty_type_summary(filtered)
     return {
         "total_records": total,
         "total_providers": total,
@@ -197,6 +228,6 @@ def aggregate_providers(rows: Iterable[Any], filters: dict[str, str] | None = No
         "providers_without_valid_uf": missing_uf,
         "records_without_valid_uf": raw_missing_uf,
         "region_sum_matches_total": sum(item["count"] for item in by_region) == total,
-        "specialty_types": {"status": "awaiting_official_mapping", "count": None, "mapping_attached": False},
+        "specialty_types": specialty_types,
         "status": "ok",
     }

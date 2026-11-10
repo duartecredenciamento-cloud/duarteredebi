@@ -25,3 +25,12 @@
 - 11 funções de teste foram executadas diretamente e passaram; o runner pytest e a integração com FastAPI/SQLAlchemy não puderam ser executados neste ambiente por indisponibilidade/bloqueio de instalação das dependências. A verificação visual em navegadores ainda deve ser feita após deploy/homologação.
 - A cache é local a cada processo (não compartilhada entre réplicas).
 - Não houve deploy, conexão a serviço Railway, migração de banco ou importação real.
+
+## Atualização do indicador de tipos
+
+- O indicador agora lê diretamente a classificação oficial da coluna `TIPO ESPECIALIDADE`; nenhum mapeamento é inferido.
+- Exibe a quantidade de valores distintos, a frequência por valor e os totais de linhas classificadas e sem classificação.
+- Valores vazios e `NÃO INFORMADO` ficam fora da contagem de categorias e são apresentados separadamente.
+- A auditoria administrativa deixou de descrever os tipos como pendentes.
+- Incluídos testes para leitura da coluna oficial, ausências, valores de grafia equivalente e filtros; os dados de origem não são modificados.
+- Testes/deploy e importação real devem ser confirmados no ambiente do projeto; este pacote não publica no Railway.
