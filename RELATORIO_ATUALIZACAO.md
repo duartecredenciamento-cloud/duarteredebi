@@ -1,6 +1,4 @@
-# Relatório histórico — BI Rede Duarte 2.0
-
-> Este documento registra a atualização visual anterior. Para as otimizações, medição de desempenho, lista completa de especialidades e validações desta entrega, consulte `RELATORIO_PERFORMANCE.md`.
+# Relatório de atualização — BI Rede Duarte 2.0
 
 ## Resultado
 

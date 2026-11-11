@@ -1,7 +1,7 @@
 from __future__ import annotations
 import csv, hashlib, io, json, os, re, secrets, unicodedata, tempfile
-from collections import OrderedDict
 from copy import deepcopy
+from threading import RLock
 from itertools import chain
 from starlette.background import BackgroundTask
 from datetime import datetime, timedelta, timezone
@@ -13,7 +13,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session as DBSession
 from .config import BASE_DIR, COOKIE_SECURE, MAX_UPLOAD_BYTES, SESSION_SECRET, STAGING_DIR
-from .analytics import aggregate_providers
+from .analytics import aggregate_providers, normalized_text
 import time
 from .database import Base, SessionLocal, engine
 from .models import AuditLog, ImportBatch, LoginThrottle, ProviderRecord, Session, User, utcnow
@@ -21,50 +21,63 @@ from .security import COOKIE_NAME, create_session, current_user, digits, hash_pa
 
 app = FastAPI(title="BI Rede Duarte", version="1.0.0", docs_url=None, redoc_url=None)
 
-# Cache local de leitura/agregação com vida curta, limite de memória e invalidação nas mutações.
-_DASHBOARD_CACHE_TTL = 45
-_DASHBOARD_AGGREGATE_LIMIT = 24
+# Cache curto dos campos analíticos compactos e das agregações por filtro.
+# Limites explícitos evitam crescimento de memória; mutações limpam ambos os caches.
 _dashboard_cache = {"at": 0.0, "rows": None, "latest": None}
-_dashboard_aggregate_cache = OrderedDict()
-_dashboard_cache_version = 0
+_dashboard_aggregate_cache = {}
+_dashboard_cache_lock = RLock()
+_DASHBOARD_TTL = 45
+_DASHBOARD_AGGREGATE_LIMIT = 24
+
 
 def invalidate_dashboard_cache():
-    global _dashboard_cache_version
-    _dashboard_cache_version += 1
-    _dashboard_cache.update(at=0.0, rows=None, latest=None)
-    _dashboard_aggregate_cache.clear()
+    with _dashboard_cache_lock:
+        _dashboard_cache.update(at=0.0, rows=None, latest=None)
+        _dashboard_aggregate_cache.clear()
+
 
 def dashboard_rows(db):
     now = time.monotonic()
-    if _dashboard_cache["rows"] is not None and now - _dashboard_cache["at"] < _DASHBOARD_CACHE_TTL:
-        return _dashboard_cache["rows"]
-    version = _dashboard_cache_version
-    columns = (ProviderRecord.id, ProviderRecord.data, ProviderRecord.business_name, ProviderRecord.tax_id, ProviderRecord.specialty, ProviderRecord.municipality, ProviderRecord.uf, ProviderRecord.priority, ProviderRecord.updated_at)
-    rows = [dict(zip(("id", "data", "business_name", "tax_id", "specialty", "municipality", "uf", "priority", "updated_at"), row))
-            for row in db.execute(select(*columns).where(ProviderRecord.active.is_(True)).order_by(ProviderRecord.id))]
-    latest = max((row.get("updated_at") for row in rows if row.get("updated_at") is not None), default=None)
-    if version == _dashboard_cache_version:
+    with _dashboard_cache_lock:
+        if _dashboard_cache["rows"] is not None and now - _dashboard_cache["at"] < _DASHBOARD_TTL:
+            return _dashboard_cache["rows"]
+        columns = (ProviderRecord.id, ProviderRecord.data, ProviderRecord.business_name,
+                   ProviderRecord.tax_id, ProviderRecord.specialty, ProviderRecord.municipality,
+                   ProviderRecord.uf, ProviderRecord.priority, ProviderRecord.updated_at)
+        names = ("id", "data", "business_name", "tax_id", "specialty", "municipality",
+                 "uf", "priority", "updated_at")
+        rows = []
+        latest = None
+        for record in db.execute(select(*columns).where(ProviderRecord.active.is_(True)).order_by(ProviderRecord.id)):
+            item = dict(zip(names, record))
+            source_data = item.pop("data") or {}
+            updated_at = item.pop("updated_at")
+            if updated_at is not None and (latest is None or updated_at > latest):
+                latest = updated_at
+            # O agregador precisa apenas do tipo oficial, não do JSON completo da planilha.
+            item["specialty_type"] = first(source_data, "TIPO ESPECIALIDADE")
+            rows.append(item)
         _dashboard_cache.update(at=now, rows=rows, latest=latest)
-    return rows
+        return rows
 
-def cached_dashboard_aggregate(db, filters):
-    global _dashboard_cache_version
-    names = ("region", "specialty", "municipality", "uf")
-    cache_key = tuple((name, str(filters.get(name) or "").strip()) for name in names)
+
+def dashboard_aggregate(rows, filters=None):
+    filters = filters or {}
+    key = tuple(normalized_text(filters.get(name, "")) for name in ("region", "specialty", "municipality", "uf"))
     now = time.monotonic()
-    version = _dashboard_cache_version
-    cached = _dashboard_aggregate_cache.get(cache_key)
-    if cached and now - cached[0] < _DASHBOARD_CACHE_TTL:
-        _dashboard_aggregate_cache.move_to_end(cache_key)
-        return deepcopy(cached[1]), cached[2]
-    result = aggregate_providers(dashboard_rows(db), filters)
-    latest = _dashboard_cache.get("latest")
-    if version == _dashboard_cache_version:
-        _dashboard_aggregate_cache[cache_key] = (now, deepcopy(result), latest)
-        _dashboard_aggregate_cache.move_to_end(cache_key)
+    with _dashboard_cache_lock:
+        cached = _dashboard_aggregate_cache.get(key)
+        if cached and cached[0] > now:
+            return deepcopy(cached[1])
+        if cached:
+            _dashboard_aggregate_cache.pop(key, None)
+    result = aggregate_providers(rows, filters)
+    with _dashboard_cache_lock:
+        _dashboard_aggregate_cache[key] = (time.monotonic() + _DASHBOARD_TTL, result)
         while len(_dashboard_aggregate_cache) > _DASHBOARD_AGGREGATE_LIMIT:
-            _dashboard_aggregate_cache.popitem(last=False)
-    return result, latest
+            _dashboard_aggregate_cache.pop(next(iter(_dashboard_aggregate_cache)))
+    return deepcopy(result)
+
 app.mount("/static", StaticFiles(directory=BASE_DIR / "app" / "static"), name="static")
 
 class LoginBody(BaseModel):
@@ -220,7 +233,10 @@ def change_password(body: PasswordChange, request: Request, user: User = Depends
 def dashboard(region: str = "", specialty: str = "", municipality: str = "", uf: str = "",
               user: User = Depends(require_user), db: DBSession = Depends(get_db)):
     filters = {"region": region, "specialty": specialty, "municipality": municipality, "uf": uf}
-    result, latest = cached_dashboard_aggregate(db, filters)
+    rows = dashboard_rows(db)
+    result = dashboard_aggregate(rows, filters)
+    with _dashboard_cache_lock:
+        latest = _dashboard_cache["latest"]
     result["last_updated_at"] = latest.isoformat() if hasattr(latest, "isoformat") else (str(latest) if latest else None)
     result["role"] = user.role
     result["filters"] = {k: v for k, v in filters.items() if v.strip()}
@@ -228,9 +244,9 @@ def dashboard(region: str = "", specialty: str = "", municipality: str = "", uf:
 
 @app.get("/api/admin/data-audit")
 def data_audit(user: User = Depends(admin_user), db: DBSession = Depends(get_db)):
-    result, _ = cached_dashboard_aggregate(db, {})
+    result = dashboard_aggregate(dashboard_rows(db))
     result["specialty_types"]["note"] = (
-        "Classificação lida diretamente da coluna oficial TIPO. "
+        "Classificação lida diretamente da coluna oficial TIPO ESPECIALIDADE. "
         "Valores vazios e NÃO INFORMADO são excluídos da contagem de categorias."
     )
     return result

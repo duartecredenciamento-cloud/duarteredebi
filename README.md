@@ -1,27 +1,17 @@
-# BI Rede Duarte — atualização de performance
+# BI Rede Duarte — tela de acesso
 
-Projeto completo FastAPI/SQLAlchemy do BI, com a identidade visual Duarte, login protegido, indicadores, análises territoriais e pesquisa de prestadores.
+Pacote visual para substituir a tela de login do BI Rede Duarte. Mantém o endpoint existente `/api/login`, os campos `cpf` e `password`, a sessão por cookie e a aplicação principal após autenticação.
 
-## Alterações desta versão
-- Cache limitado por tempo e quantidade para resultados agregados do dashboard, invalidado após importações e mutações cadastrais.
-- Cache da interface por 30 segundos ao retornar ao panorama, com deduplicação de requisições idênticas em andamento e cancelamento de consultas antigas ao trocar filtros.
-- Menos normalizações repetidas durante agregações; contagens e identidade dos prestadores permanecem centralizadas na camada analítica.
-- Lista de especialidades completa e ordenada por prestadores únicos, com rolagem virtual para manter poucas linhas no DOM ao mesmo tempo.
-- Mapa reutiliza as geometrias e o desenho vetorial após o primeiro carregamento.
-- Removido o carregamento redundante da folha de fontes; sem dependências novas.
-- A distribuição de tipos continua lendo exclusivamente a coluna `TIPO`.
+## Conteúdo
+- `index.html` — tela de login e estrutura atual do BI.
+- `static/app.css` — estilos da aplicação e novo visual da tela de acesso.
+- `static/app.js` — lógica original com animação leve de partículas, alternância da visibilidade da senha e estado de envio.
+- `static/logo.png` — logo enviado.
 
-## Estrutura
-- `app/` — API, autenticação, modelos, análises e recursos estáticos.
-- `tests/` — testes analíticos e verificações estruturais.
-- `requirements.txt` — dependências já utilizadas pelo projeto.
-- `railway.json` — configuração existente do serviço.
+## Instalação
+Substitua os arquivos equivalentes no projeto, preservando as rotas estáticas `/static/app.css`, `/static/app.js` e `/static/logo.png`. Faça commit e push para acionar o deploy do Railway.
 
-## Execução local
-Instale as dependências de `requirements.txt`, configure as variáveis de ambiente exigidas pelo projeto (incluindo a URL do banco e segredo da sessão) e inicie com `uvicorn app.main:app`. Não configure credenciais reais em código-fonte.
+O pacote mantém o backend e os fluxos já existentes. Após a instalação, valide o login e as funções no ambiente de homologação antes do deploy no Railway.
 
-## Testes
-Execute `pytest -q` no diretório do projeto. Antes da implantação, valide também a API e o banco de homologação; esta entrega não altera nem publica dados de produção.
-
-## Cache
-Os agregados permanecem em memória por até 45 segundos, com limite de 24 combinações de filtros. O cache é local a cada processo e é invalidado após gravações feitas pela própria aplicação; mudanças externas são refletidas ao expirar o prazo.
+## Complemento de pesquisa
+O cartão “Atenção prioritária” foi removido do Panorama Executivo. Na página Prestadores, o Administrador Master pode exportar em Excel todos os registros da busca atual, com os mesmos filtros, independentemente da paginação exibida. A exportação usa uma rota autenticada, preserva as colunas da origem e é registrada no histórico administrativo.

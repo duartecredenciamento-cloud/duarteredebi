@@ -1,26 +1,32 @@
-# Atualização de performance — BI Rede Duarte
+# Atualização pontual — BI Rede Duarte
 
-**Escopo:** otimização pontual, apresentação integral das especialidades e acabamento visual. A estrutura FastAPI/SQLAlchemy, os dados, autenticação, permissões, filtros, exportações, mapa e análises regionais foram preservados.
+## Escopo aplicado
 
-## Alterações realizadas
+As mudanças ficaram concentradas em `app/main.py`, `app/static/app.js`, `app/static/app.css` e `app/static/index.html`, sem alteração de banco, arquitetura, autenticação, permissões, filtros de negócio ou regras de deduplicação.
 
-- **API e agregações:** cache de resultados por combinação de filtros, com validade de 45 segundos, limite de 24 combinações e invalidação após importação, criação, edição e desativação de registros. Resultados armazenados são copiados antes de serem devolvidos, evitando alterações cruzadas entre respostas.
-- **Cálculos:** filtros vazios não normalizam campos por registro; a cobertura de UFs passou a usar uma passagem única. A busca do cabeçalho oficial `TIPO` é resolvida uma vez por esquema de colunas e nunca usa `ESPECIALIDADE` como alternativa.
-- **Navegação:** ao retornar ao Panorama Executivo, a interface reutiliza a resposta por até 30 segundos; chamadas idênticas em andamento são compartilhadas e uma consulta anterior é cancelada quando filtros novos são enviados.
-- **Gráficos:** o painel mostra a lista completa de `ESPECIALIDADE`, por prestadores únicos e em ordem decrescente. A rolagem virtual limita as linhas montadas simultaneamente, sem limitar as categorias; as geometrias e o desenho dos estados são reutilizados depois do primeiro carregamento.
-- **Visual:** mantidos fundo claro, azul-marinho e laranja. Do Duarte Repay foram usados como referência a hierarquia, o espaçamento, a organização da navegação e as transições discretas — sem copiar o fundo escuro nem redesenhar as demais páginas.
-- **Dependências e dados:** nenhuma dependência foi acrescentada; não houve migração, alteração destrutiva, importação ou publicação.
+- **API do painel:** cache temporário das agregações por combinação de filtros, limitado a 24 combinações e invalidado em cadastros, alterações, desativações e importações. Os resultados são copiados ao sair do cache para impedir que a auditoria administrativa altere dados compartilhados.
+- **Memória do painel:** o cache mantém os campos analíticos necessários e o valor oficial de `TIPO ESPECIALIDADE`, em vez de reter cada JSON completo da planilha durante os 45 segundos de cache. O banco ainda precisa ler o JSON para extrair esse campo; não foi aplicada extração específica de banco para evitar dependência de dialeto.
+- **Consultas e navegação:** requisições antigas do painel e da pesquisa de prestadores são canceladas no navegador; a resposta obsoleta não substitui a mais recente. A geometria do mapa também não é redesenhada com dados de um filtro antigo.
+- **Administração:** usuários, histórico e auditoria são carregados na primeira visita; os botões de atualização continuam forçando uma consulta. Após importação, a auditoria é marcada para recarga.
+- **Especialidades:** o painel agora usa a série completa `normalized_specialties`, em ordem decrescente de prestadores únicos. As categorias são inseridas em lotes conforme a rolagem; os nomes completos ficam legíveis, sem animação de largura em centenas de barras.
+- **Acabamento:** feedback discreto durante consultas, fonte carregada por uma única referência no HTML, barras longas com rolagem interna e respeito a `prefers-reduced-motion`.
 
-## Medição local
+## Arquivos alterados
 
-Na aba `BANCO REDE` da planilha de referência disponível, foram processadas **63.035 linhas**. A agregação anterior levou **2,311 s**; a versão otimizada levou **1,123 s** na mesma rotina local — redução de aproximadamente **51%** no tempo de cálculo observado. A resposta manteve **33.792 prestadores únicos**, **1.026 especialidades distintas** e entregou as **1.026** na lista integral.
+- `app/main.py`
+- `app/static/app.js`
+- `app/static/app.css`
+- `app/static/index.html`
+- `tests/test_performance_scope.py` (novos testes focados)
 
-Essa comparação mede apenas a função de agregação local sobre a planilha, não inclui consulta a banco remoto, rede, serialização HTTP ou o ambiente Railway. Os tempos podem variar conforme a máquina.
+## Validação e limites
 
-## Validações e limites
+Foram acrescentados testes para garantir que a série analítica não seja truncada, permaneça ordenada e que cache/cancelamento estejam conectados ao fluxo da aplicação. A validação local não mede o tempo do Railway nem do banco ativo; não foi possível comparar tempos reais antes/depois ou navegar na instância implantada. Nenhuma base foi alterada e nenhum deploy foi realizado.
 
-- **15 testes analíticos e estruturais** passaram por execução direta, incluindo ordenação, contagem única, cobertura regional, fonte exclusiva `TIPO` e apresentação sem limite de dez categorias.
-- A sintaxe do JavaScript passou; a análise sintática dos 9 módulos Python passou; o HTML estrutural passou com 74 IDs únicos e os destinos principais presentes.
-- Este ambiente não dispõe de `pytest`, FastAPI, SQLAlchemy ou Starlette. Portanto, não foi possível iniciar a API, testar consultas contra o banco nem executar um teste ponta a ponta dos filtros e navegação.
-- Não foi possível renderizar o painel autenticado em diferentes navegadores/resoluções nem conferir console/API em execução. A responsividade foi revisada no código, mas ainda deve ser validada em homologação.
-- Nenhuma alteração foi publicada no Railway; a base de produção não foi acessada ou modificada.
+O pacote foi montado a partir da última cópia completa do projeto disponível nesta conversa. Os três anexos mais recentes do usuário e a referência visual Duarte Repay não apareceram como arquivos legíveis no ambiente desta execução; por isso, confira a integração com a versão atualmente implantada antes de publicar. As decisões de refinamento visual foram baseadas nos estilos existentes do BI, não em uma captura do Repay.
+
+## Testes
+
+- Executar a suíte: `python -m unittest discover -s tests -v`
+- Verificar sintaxe Python: `python -m compileall -q app`
+- Verificar sintaxe JavaScript: `node --check app/static/app.js`
