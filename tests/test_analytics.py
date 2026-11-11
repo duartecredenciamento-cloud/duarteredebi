@@ -2,7 +2,7 @@ from app.analytics import MISSING, STATE_REGIONS, aggregate_providers, normalize
 
 
 def row(i, tax_id="", name="", specialty="", uf="", municipality="", priority="", specialty_type=""):
-    data = {"TIPO ESPECIALIDADE": specialty_type} if specialty_type else {}
+    data = {"TIPO": specialty_type} if specialty_type else {}
     return {"id": i, "tax_id": tax_id, "business_name": name, "specialty": specialty,
             "uf": uf, "municipality": municipality, "priority": priority, "data": data}
 
@@ -78,22 +78,22 @@ def test_specialty_type_reads_official_column_and_excludes_missing_values():
     assert types["count"] == 1
     assert types["values"] == [{"label": "CLÍNICA MÉDICA", "records": 2}]
     assert types["valid_records"] == 2 and types["missing_records"] == 2
-    assert types["source_column"] == "TIPO ESPECIALIDADE"
+    assert types["source_column"] == "TIPO"
 
 
 
 def test_specialty_type_never_falls_back_to_specialty_or_legacy_fields():
     rows = [
         {"id": 1, "business_name": "A", "specialty": "Centro de Diagnóstico",
-         "specialty_type": "Centro de Diagnóstico", "data": {"ESPECIALIDADE": "Centro de Diagnóstico"}},
+         "specialty_type": "Centro de Diagnóstico", "data": {"ESPECIALIDADE": "Centro de Diagnóstico", "TIPO ESPECIALIDADE": "Centro de Diagnóstico"}},
         {"id": 2, "business_name": "B", "ESPECIALIDADE": "Hospital",
-         "TIPO ESPECIALIDADE": "HOSPITAL"},
+         "TIPO": "HOSPITAL"},
     ]
     types = aggregate_providers(rows)["specialty_types"]
     assert types["values"] == [{"label": "HOSPITAL", "records": 1}]
     assert types["count"] == 1
     assert types["valid_records"] == 1 and types["missing_records"] == 1
-    assert types["source_column"] == "TIPO ESPECIALIDADE"
+    assert types["source_column"] == "TIPO"
 
 
 def test_state_series_uses_unique_provider_identity_and_keeps_unknown_separate():
@@ -143,6 +143,24 @@ def test_filters_are_applied_before_shared_deduplication():
     assert [(x["uf"], x["count"]) for x in filtered["by_state"]] == [("SP", 1)]
 
 
+def test_all_specialties_are_available_beyond_top_ten_and_sorted_by_unique_providers():
+    rows = []
+    for i in range(15):
+        specialty = f"Especialidade {i + 1:02d}"
+        for j in range(15 - i):
+            rows.append(row(1000 + i * 20 + j, f"{i * 100 + j + 1:011d}", f"Prestador {i}-{j}", specialty))
+    # A duplicated row for the first provider must not increase its specialty count.
+    rows.append(row(9999, "00000000001", "Prestador 0-0", "Especialidade 01"))
+    result = aggregate_providers(rows)
+    all_specialties = result["normalized_specialties"]
+    assert len(all_specialties) == 15
+    assert len(result["top_specialties"]) == 10
+    assert all_specialties[0]["label"] == "Especialidade 01"
+    assert all_specialties[0]["providers"] == 15
+    assert all_specialties[-1]["label"] == "Especialidade 15"
+    assert [item["providers"] for item in all_specialties] == sorted((item["providers"] for item in all_specialties), reverse=True)
+
+
 def test_frontend_has_responsive_breakpoints_and_login_hidden_rule():
     from pathlib import Path
     root = Path(__file__).resolve().parents[1]
@@ -159,5 +177,8 @@ def test_frontend_has_responsive_breakpoints_and_login_hidden_rule():
     assert '.topbar-right{flex:0 1 auto;min-width:0;justify-content:flex-end;}' in css
     assert 'state-distribution-panel' in css
     js = (root / "app/static/app.js").read_text(encoding="utf-8")
-    assert "types?.source_column==='TIPO ESPECIALIDADE'" in js
+    assert "types?.source_column==='TIPO'" in js
     assert "officialTypeValues(types)" in js
+    assert "normalized_specialties" in js and "renderAllSpecialties" in js
+    assert "specialty-virtual-spacer" in js and "top_specialties||[]" not in js
+    assert "TIPO ESPECIALIDADE" not in js

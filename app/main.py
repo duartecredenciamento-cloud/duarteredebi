@@ -19,22 +19,50 @@ from .security import COOKIE_NAME, create_session, current_user, digits, hash_pa
 
 app = FastAPI(title="BI Rede Duarte", version="1.0.0", docs_url=None, redoc_url=None)
 
-# Cache de leitura curto: limita custo de agregação da base, invalidado nas mutações.
-_dashboard_cache = {"at": 0.0, "rows": None}
+# Cache local de leitura/agregação com vida curta, limite de memória e invalidação nas mutações.
+_DASHBOARD_CACHE_TTL = 45
+_DASHBOARD_AGGREGATE_LIMIT = 24
+_dashboard_cache = {"at": 0.0, "rows": None, "latest": None}
+_dashboard_aggregate_cache = OrderedDict()
+_dashboard_cache_version = 0
 
 def invalidate_dashboard_cache():
-    _dashboard_cache["at"] = 0.0
-    _dashboard_cache["rows"] = None
+    global _dashboard_cache_version
+    _dashboard_cache_version += 1
+    _dashboard_cache.update(at=0.0, rows=None, latest=None)
+    _dashboard_aggregate_cache.clear()
 
 def dashboard_rows(db):
     now = time.monotonic()
-    if _dashboard_cache["rows"] is not None and now - _dashboard_cache["at"] < 45:
+    if _dashboard_cache["rows"] is not None and now - _dashboard_cache["at"] < _DASHBOARD_CACHE_TTL:
         return _dashboard_cache["rows"]
+    version = _dashboard_cache_version
     columns = (ProviderRecord.id, ProviderRecord.data, ProviderRecord.business_name, ProviderRecord.tax_id, ProviderRecord.specialty, ProviderRecord.municipality, ProviderRecord.uf, ProviderRecord.priority, ProviderRecord.updated_at)
     rows = [dict(zip(("id", "data", "business_name", "tax_id", "specialty", "municipality", "uf", "priority", "updated_at"), row))
             for row in db.execute(select(*columns).where(ProviderRecord.active.is_(True)).order_by(ProviderRecord.id))]
-    _dashboard_cache.update(at=now, rows=rows)
+    latest = max((row.get("updated_at") for row in rows if row.get("updated_at") is not None), default=None)
+    if version == _dashboard_cache_version:
+        _dashboard_cache.update(at=now, rows=rows, latest=latest)
     return rows
+
+def cached_dashboard_aggregate(db, filters):
+    global _dashboard_cache_version
+    names = ("region", "specialty", "municipality", "uf")
+    cache_key = tuple((name, str(filters.get(name) or "").strip()) for name in names)
+    now = time.monotonic()
+    version = _dashboard_cache_version
+    cached = _dashboard_aggregate_cache.get(cache_key)
+    if cached and now - cached[0] < _DASHBOARD_CACHE_TTL:
+        _dashboard_aggregate_cache.move_to_end(cache_key)
+        return deepcopy(cached[1]), cached[2]
+    result = aggregate_providers(dashboard_rows(db), filters)
+    latest = _dashboard_cache.get("latest")
+    if version == _dashboard_cache_version:
+        _dashboard_aggregate_cache[cache_key] = (now, deepcopy(result), latest)
+        _dashboard_aggregate_cache.move_to_end(cache_key)
+        while len(_dashboard_aggregate_cache) > _DASHBOARD_AGGREGATE_LIMIT:
+            _dashboard_aggregate_cache.popitem(last=False)
+    return result, latest
 app.mount("/static", StaticFiles(directory=BASE_DIR / "app" / "static"), name="static")
 
 class LoginBody(BaseModel):
@@ -190,9 +218,7 @@ def change_password(body: PasswordChange, request: Request, user: User = Depends
 def dashboard(region: str = "", specialty: str = "", municipality: str = "", uf: str = "",
               user: User = Depends(require_user), db: DBSession = Depends(get_db)):
     filters = {"region": region, "specialty": specialty, "municipality": municipality, "uf": uf}
-    rows = dashboard_rows(db)
-    result = aggregate_providers(rows, filters)
-    latest = max((row.get("updated_at") for row in rows if row.get("updated_at") is not None), default=None)
+    result, latest = cached_dashboard_aggregate(db, filters)
     result["last_updated_at"] = latest.isoformat() if hasattr(latest, "isoformat") else (str(latest) if latest else None)
     result["role"] = user.role
     result["filters"] = {k: v for k, v in filters.items() if v.strip()}
@@ -200,7 +226,7 @@ def dashboard(region: str = "", specialty: str = "", municipality: str = "", uf:
 
 @app.get("/api/admin/data-audit")
 def data_audit(user: User = Depends(admin_user), db: DBSession = Depends(get_db)):
-    result = aggregate_providers(dashboard_rows(db))
+    result, _ = cached_dashboard_aggregate(db, {})
     result["specialty_types"]["note"] = (
         "Classificação lida diretamente da coluna oficial TIPO. "
         "Valores vazios e NÃO INFORMADO são excluídos da contagem de categorias."

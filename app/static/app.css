@@ -128,3 +128,21 @@ body.sidebar-collapsed .sidebar{width:78px;padding-left:12px;padding-right:12px}
 #exportSearch{flex:0 0 auto;min-height:34px;font-size:9px;white-space:nowrap;}
 @media(min-width:801px) and (max-width:1100px){.kpis{grid-template-columns:repeat(2,minmax(0,1fr));}}
 @media(max-width:520px){.results-toolbar{align-items:flex-start;flex-direction:column;gap:8px;}#exportSearch{width:100%;}}
+
+/* Lista integral de especialidades com rolagem virtual para evitar centenas de nós ativos. */
+.all-specialties-panel{min-height:0;}
+.all-specialties-panel .panel-head{margin-bottom:10px;}
+.all-specialties-panel .panel-menu{letter-spacing:.4px;font-size:8px;white-space:nowrap;}
+.specialty-virtual-list{display:block;position:relative;min-height:150px;max-height:min(62vh,620px);overflow:auto;overscroll-behavior:contain;scrollbar-width:thin;scrollbar-color:#cbd5df transparent;contain:layout paint;}
+.specialty-virtual-spacer{position:relative;width:100%;min-height:1px;}
+.specialty-virtual-row{position:absolute;left:0;right:0;display:grid;gap:5px;padding:2px 2px 9px;}
+.specialty-virtual-row .bar-top{align-items:flex-start;gap:10px;font-size:9px;}
+.specialty-virtual-row .bar-top>span{display:grid;grid-template-columns:20px minmax(0,1fr) auto;align-items:start;gap:7px;white-space:normal;overflow:visible;text-overflow:clip;min-width:0;}
+.specialty-virtual-row .specialty-label{min-width:0;white-space:normal;overflow-wrap:anywhere;line-height:1.35;color:#536981;}
+.specialty-virtual-row .bar-position{padding-top:1px;}
+.specialty-virtual-row .bar-share{white-space:nowrap;padding-top:1px;}
+.specialty-virtual-row .bar-top>b{flex:0 0 auto;white-space:nowrap;padding-top:1px;}
+.specialty-virtual-row .bar-track{height:5px;}
+.specialty-virtual-list:focus-visible{outline:3px solid #3475c33d;outline-offset:2px;}
+@media(max-width:520px){.specialty-virtual-list{max-height:min(64vh,540px);}.specialty-virtual-row .bar-top{font-size:8px;gap:6px}.specialty-virtual-row .bar-top>span{grid-template-columns:18px minmax(0,1fr) auto;gap:5px}.all-specialties-panel{padding:12px}.all-specialties-panel .panel-head p{max-width:220px;line-height:1.4}}
+@media(prefers-reduced-motion:reduce){.specialty-virtual-row .bar-track i{transition:none;}}

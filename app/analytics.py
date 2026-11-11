@@ -4,6 +4,7 @@ from __future__ import annotations
 import re
 import unicodedata
 from collections import defaultdict
+from functools import lru_cache
 from typing import Any, Iterable
 
 MISSING = "NÃO INFORMADO"
@@ -36,6 +37,15 @@ def normalized_text(value: Any) -> str:
     text = unicodedata.normalize("NFKD", str(value or "").strip().casefold())
     text = "".join(ch for ch in text if not unicodedata.combining(ch))
     return " ".join(re.sub(r"[^a-z0-9]+", " ", text).split())
+
+
+@lru_cache(maxsize=64)
+def _official_type_key(keys: tuple[Any, ...]) -> Any:
+    """Resolve o cabeçalho TIPO uma vez por esquema de colunas, não por linha."""
+    for key in keys:
+        if isinstance(key, str) and normalized_text(key).replace(" ", "") == "tipo":
+            return key
+    return None
 
 
 def display_text(value: Any) -> str:
@@ -97,24 +107,30 @@ def normalize_uf(value: Any) -> tuple[str, str]:
 
 
 def matches_filter(row: Any, filters: dict[str, str]) -> bool:
-    fields = {
-        "specialty": _get(row, "specialty", "ESPECIALIDADE"),
-        "municipality": _get(row, "municipality", "MUNICÍPIO", "MUNICIPIO"),
-        "uf": _get(row, "uf", "UF"),
-        "region": normalize_uf(_get(row, "uf", "UF"))[1],
-    }
-    for key, criterion in filters.items():
-        needle = normalized_text(criterion)
-        if not needle:
-            continue
+    """Aplica apenas filtros ativos, evitando normalizar campos desnecessários por linha."""
+    criteria = [(key, normalized_text(value)) for key, value in filters.items()]
+    criteria = [(key, needle) for key, needle in criteria if needle]
+    if not criteria:
+        return True
+    for key, needle in criteria:
         if key == "uf":
-            row_uf = normalize_uf(_get(row, "uf", "UF"))[0]
-            criterion_uf = normalize_uf(criterion)[0]
+            raw_uf = _get(row, "uf", "UF")
+            row_uf = normalize_uf(raw_uf)[0]
+            criterion_uf = normalize_uf(needle)[0]
             if criterion_uf != MISSING:
                 if row_uf != criterion_uf:
                     return False
                 continue
-        if needle not in normalized_text(fields.get(key, "")):
+            value = raw_uf
+        elif key == "region":
+            value = normalize_uf(_get(row, "uf", "UF"))[1]
+        elif key == "specialty":
+            value = _get(row, "specialty", "ESPECIALIDADE")
+        elif key == "municipality":
+            value = _get(row, "municipality", "MUNICÍPIO", "MUNICIPIO")
+        else:
+            value = ""
+        if needle not in normalized_text(value):
             return False
     return True
 
@@ -165,11 +181,10 @@ def _official_type_value(row: Any) -> Any:
         source = getattr(row, "data", {}) or {}
     if not isinstance(source, dict):
         return ""
-    wanted = normalized_text("TIPO").replace(" ", "")
-    for key, value in source.items():
-        if normalized_text(key).replace(" ", "") == wanted:
-            return value
-    return ""
+    if "TIPO" in source:
+        return source["TIPO"]
+    key = _official_type_key(tuple(source.keys()))
+    return source.get(key, "") if key is not None else ""
 
 
 def _specialty_type_groups(rows: list[Any]) -> dict[str, Any]:
@@ -247,9 +262,14 @@ def aggregate_providers(rows: Iterable[Any], filters: dict[str, str] | None = No
                 municipalities.add(municipality)
 
     raw_count = len(filtered)
-    raw_missing_uf = sum(1 for row in filtered if normalize_uf(_get(row, "uf", "UF"))[0] == MISSING)
-    identified_ufs = {normalize_uf(_get(row, "uf", "UF"))[0] for row in filtered}
-    identified_ufs.discard(MISSING)
+    raw_missing_uf = 0
+    identified_ufs: set[str] = set()
+    for row in filtered:
+        row_uf = normalize_uf(_get(row, "uf", "UF"))[0]
+        if row_uf == MISSING:
+            raw_missing_uf += 1
+        else:
+            identified_ufs.add(row_uf)
     return {
         "total_records": total,
         "total_providers": total,

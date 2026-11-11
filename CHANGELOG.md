@@ -46,7 +46,15 @@
 
 ## Correção — fonte exclusiva para tipos de especialidade
 
-- A agregação lê os tipos somente do cabeçalho oficial `TIPO ESPECIALIDADE` no dado bruto; removeu-se qualquer caminho de fallback para `ESPECIALIDADE`, `specialty` ou `specialty_type` derivados.
-- A interface e a auditoria ocultam a distribuição quando a API não confirma explicitamente `source_column: TIPO ESPECIALIDADE`.
+- A agregação lê os tipos somente do cabeçalho oficial `TIPO` no dado bruto; removeu-se qualquer caminho de fallback para `ESPECIALIDADE`, `specialty` ou `specialty_type` derivados.
+- A interface e a auditoria ocultam a distribuição quando a API não confirma explicitamente `source_column: TIPO`.
 - A normalização não remove mais diferenças de acento ou pontuação entre categorias oficiais; apenas caixa e espaços são consolidados.
 - Incluído teste de regressão com valores de especialidade que não podem aparecer na distribuição de tipos.
+
+## Otimização de performance e lista completa de especialidades
+
+- O dashboard passou a guardar resultados analíticos por filtros por até 45 segundos, com limite de 24 entradas e invalidação em importações/cadastros/edições/desativações; a cópia retornada evita mutações cruzadas entre requisições.
+- A lista de especialidades usa a distribuição completa da API, permanece ordenada por prestadores únicos e monta as linhas visíveis sob demanda, com rolagem virtual e nomes completos.
+- O retorno ao panorama reaproveita os dados por até 30 segundos; requisições repetidas são compartilhadas, consultas antigas são canceladas quando os filtros mudam e o mapa reutiliza a geometria preparada.
+- A agregação deixou de normalizar campos quando não há filtro ativo e unificou uma passagem de cobertura de UF; as regras de deduplicação permanecem inalteradas.
+- Removida a folha de fontes repetida; dependências, esquema e demais fluxos mantidos.
